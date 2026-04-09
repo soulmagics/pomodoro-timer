@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pomodoro Timer</title>
+    <style>
+        :root {
+            --bg-color-work: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%); 
+            --bg-color-break: linear-gradient(135deg, #e0c3fc 0%, #8ec5fc 100%); 
+            --text-color: #2c3e50;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Rounded", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: var(--bg-color-work);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-color);
+            transition: background 1s ease;
+            overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 50px 60px;
+            border-radius: 50px;
+            background: rgba(255, 255, 255, 0.45);
+            backdrop-filter: blur(30px);
+            -webkit-backdrop-filter: blur(30px);
+            border: 1px solid rgba(255, 255, 255, 0.7);
+            box-shadow: 0 30px 80px rgba(0, 0, 0, 0.1), inset 0 2px 2px rgba(255,255,255,0.8);
+        }
+
+        .mode-label {
+            font-size: 1.3rem;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+            margin-bottom: 25px;
+            color: var(--text-color);
+            background: rgba(255, 255, 255, 0.6);
+            padding: 10px 28px;
+            border-radius: 30px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.03), inset 0 1px 2px rgba(255,255,255,1);
+        }
+
+        .timer-container {
+            position: relative;
+            width: 380px;
+            height: 380px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 45px;
+            cursor: pointer; 
+        }
+
+        .progress-ring {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            overflow: visible;
+        }
+
+        .timer {
+            font-size: 6.5rem;
+            font-weight: 800; 
+            line-height: 1;
+            font-variant-numeric: tabular-nums;
+            letter-spacing: -3px;
+            color: var(--text-color);
+            z-index: 10;
+            user-select: none;
+        }
+
+        .controls {
+            display: flex;
+            gap: 20px;
+            width: 100%;
+            justify-content: center;
+            z-index: 10;
+        }
+
+        button {
+            padding: 18px 40px;
+            font-size: 1.15rem;
+            font-weight: 700;
+            border: none;
+            border-radius: 100px; 
+            background: rgba(255, 255, 255, 0.9);
+            color: var(--text-color);
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08), inset 0 2px 2px rgba(255, 255, 255, 1);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            flex: 1;
+            max-width: 140px;
+        }
+
+        button:hover {
+            background: #ffffff;
+            transform: translateY(-4px) scale(1.03);
+            box-shadow: 0 14px 30px rgba(0, 0, 0, 0.12), inset 0 2px 2px rgba(255, 255, 255, 1);
+        }
+
+        button:active {
+            transform: translateY(1px);
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.06);
+        }
+
+        /* 현재 진행 중인 동그라미 애니메이션 (크기 움직임 제거, 부드러운 깜빡임만 유지) */
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 0.4; }
+            50% { opacity: 1; }
+        }
+        .pulsing {
+            animation: pulse-dot 2s infinite ease-in-out;
+        }
+
+        /* 애니메이션 트랜지션 (1초마다 선형 위치 이동으로 완벽한 부드러움을 줌) */
+        #stickmanPos {
+            transition: transform 1s linear; 
+        }
+
+        /* DEFAULT STATE (IDLE / PAUSED) */
+        .stickman-part {
+            animation-play-state: paused;
+        }
+        .idle .stickman-part, .walking .stickman-part, .running .stickman-part, .jumping .stickman-part {
+            animation-play-state: running;
+        }
+
+        /* ------------------ 1. IDLE (여유롭게 흔들거리기) ------------------ */
+        .idle #stickmanBody { animation: idle-body 3s infinite ease-in-out; }
+        .idle .bicep-l { animation: idle-bicep-l 3s infinite ease-in-out; }
+        .idle .bicep-r { animation: idle-bicep-r 3s infinite ease-in-out; }
+        
+        @keyframes idle-body {
+            0%, 100% { transform: translateY(0) rotate(0deg); }
+            50% { transform: translateY(2px) rotate(1.5deg); } 
+        }
+        @keyframes idle-bicep-l {
+            0%, 100% { transform: translate(0, -6px) rotate(10deg); }
+            50% { transform: translate(0, -6px) rotate(-5deg); }
+        }
+        @keyframes idle-bicep-r {
+            0%, 100% { transform: translate(0, -6px) rotate(-10deg); }
+            50% { transform: translate(0, -6px) rotate(5deg); }
+        }
+
+        /* ------------------ 2. WALKING & RUNNING (걷고 뛰기) ------------------ */
+        .walking #stickmanBody, .running #stickmanBody { animation-name: walk-body; animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1); animation-iteration-count: infinite; }
+        .walking .thigh-l, .running .thigh-l { animation-name: walk-thigh-l; animation-timing-function: linear; animation-iteration-count: infinite; }
+        .walking .thigh-r, .running .thigh-r { animation-name: walk-thigh-r; animation-timing-function: linear; animation-iteration-count: infinite; }
+        .walking .shin-l, .running .shin-l { animation-name: walk-shin-l; animation-timing-function: linear; animation-iteration-count: infinite; }
+        .walking .shin-r, .running .shin-r { animation-name: walk-shin-r; animation-timing-function: linear; animation-iteration-count: infinite; }
+        .walking .bicep-l, .running .bicep-l { animation-name: walk-bicep-l; animation-timing-function: linear; animation-iteration-count: infinite; }
+        .walking .bicep-r, .running .bicep-r { animation-name: walk-bicep-r; animation-timing-function: linear; animation-iteration-count: infinite; }
+        .walking .forearm-l, .running .forearm-l { animation-name: walk-forearm-l; animation-timing-function: linear; animation-iteration-count: infinite; }
+        .walking .forearm-r, .running .forearm-r { animation-name: walk-forearm-r; animation-timing-function: linear; animation-iteration-count: infinite; }
+
+        /* 속도 제어 */
+        .walking .stickman-part { animation-duration: 0.8s; }
+        .running .stickman-part { animation-duration: 0.35s; }
+
+        @keyframes walk-body {
+            0%   { transform: translateY(0px) rotate(2deg); }
+            25%  { transform: translateY(-2px) rotate(4deg); }
+            50%  { transform: translateY(0px) rotate(2deg); }
+            75%  { transform: translateY(-2px) rotate(0deg); }
+            100% { transform: translateY(0px) rotate(2deg); }
+        }
+        @keyframes walk-thigh-l {
+            0%   { transform: translate(0, 4px) rotate(-35deg); }
+            25%  { transform: translate(0, 4px) rotate(0deg); }  
+            50%  { transform: translate(0, 4px) rotate(35deg); } 
+            75%  { transform: translate(0, 4px) rotate(-10deg); } 
+            100% { transform: translate(0, 4px) rotate(-35deg); }
+        }
+        @keyframes walk-thigh-r {
+            0%   { transform: translate(0, 4px) rotate(35deg); } 
+            25%  { transform: translate(0, 4px) rotate(-10deg); }
+            50%  { transform: translate(0, 4px) rotate(-35deg); }
+            75%  { transform: translate(0, 4px) rotate(0deg); }  
+            100% { transform: translate(0, 4px) rotate(35deg); } 
+        }
+        @keyframes walk-shin-l {
+            0%   { transform: translate(0, 7px) rotate(0deg); }  
+            25%  { transform: translate(0, 7px) rotate(0deg); }  
+            50%  { transform: translate(0, 7px) rotate(15deg); } 
+            75%  { transform: translate(0, 7px) rotate(70deg); }  
+            100% { transform: translate(0, 7px) rotate(0deg); }  
+        }
+        @keyframes walk-shin-r {
+            0%   { transform: translate(0, 7px) rotate(15deg); } 
+            25%  { transform: translate(0, 7px) rotate(70deg); } 
+            50%  { transform: translate(0, 7px) rotate(0deg); }  
+            75%  { transform: translate(0, 7px) rotate(0deg); }  
+            100% { transform: translate(0, 7px) rotate(15deg); } 
+        }
+        @keyframes walk-bicep-l {
+            0%   { transform: translate(0, -6px) rotate(30deg); }  
+            50%  { transform: translate(0, -6px) rotate(-30deg); } 
+            100% { transform: translate(0, -6px) rotate(30deg); }  
+        }
+        @keyframes walk-bicep-r {
+            0%   { transform: translate(0, -6px) rotate(-30deg); } 
+            50%  { transform: translate(0, -6px) rotate(30deg); }  
+            100% { transform: translate(0, -6px) rotate(-30deg); } 
+        }
+        @keyframes walk-forearm-l {
+            0%   { transform: translate(0, 9px) rotate(-10deg); } 
+            50%  { transform: translate(0, 9px) rotate(-50deg); } 
+            100% { transform: translate(0, 9px) rotate(-10deg); }
+        }
+        @keyframes walk-forearm-r {
+            0%   { transform: translate(0, 9px) rotate(-50deg); } 
+            50%  { transform: translate(0, 9px) rotate(-10deg); } 
+            100% { transform: translate(0, 9px) rotate(-50deg); }
+        }
+
+        /* ------------------ 3. JUMPING ------------------ */
+        .jumping #stickmanBody { animation: jump-body 0.5s infinite ease-out; }
+        .jumping .bicep-l { animation: jump-arm-l 0.5s infinite; }
+        .jumping .bicep-r { animation: jump-arm-r 0.5s infinite; }
+        .jumping .thigh-l { animation: jump-leg-l 0.5s infinite; }
+        .jumping .thigh-r { animation: jump-leg-r 0.5s infinite; }
+        .jumping .shin-l { animation: jump-shin-l 0.5s infinite; }
+        .jumping .shin-r { animation: jump-shin-r 0.5s infinite; }
+        
+        @keyframes jump-body {
+            0%, 100% { transform: translateY(0); }    
+            50% { transform: translateY(-38px) scale(1.1); } 
+        }
+        @keyframes jump-arm-l {
+            0%, 100% { transform: translate(0, -6px) rotate(0deg); }
+            50% { transform: translate(0, -6px) rotate(-150deg); }
+        }
+        @keyframes jump-arm-r {
+            0%, 100% { transform: translate(0, -6px) rotate(0deg); }
+            50% { transform: translate(0, -6px) rotate(150deg); }
+        }
+        @keyframes jump-leg-l {
+            0%, 100% { transform: translate(0, 4px) rotate(0deg); }
+            50% { transform: translate(0, 4px) rotate(-45deg); }
+        }
+        @keyframes jump-leg-r {
+            0%, 100% { transform: translate(0, 4px) rotate(0deg); }
+            50% { transform: translate(0, 4px) rotate(45deg); }
+        }
+        @keyframes jump-shin-l {
+            0%, 100% { transform: translate(0, 7px) rotate(0deg); }
+            50% { transform: translate(0, 7px) rotate(20deg); }
+        }
+        @keyframes jump-shin-r {
+            0%, 100% { transform: translate(0, 7px) rotate(0deg); }
+            50% { transform: translate(0, 7px) rotate(20deg); }
+        }
+
+        @media (max-width: 600px) {
+            .timer-container { width: 300px; height: 300px; margin-bottom: 30px; }
+            .timer { font-size: 5rem; }
+            .container { padding: 40px 20px; border-radius: 40px; width: 90%; }
+            .controls { gap: 10px; }
+            button { padding: 16px 20px; font-size: 1rem; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div class="mode-label" id="modeLabel">집중 시간</div>
+        
+        <!-- 테스트용 숨겨진 트릭: 숫자 부분을 더블 클릭하면 5초로 훌쩍 넘깁니다. -->
+        <div class="timer-container" id="timerArea" title="더블 클릭하여 5초 남은 상태로 테스트해보세요!">
+            <svg class="progress-ring" viewBox="0 0 380 380" id="dotsSVG">
+                <defs>
+                    <linearGradient id="gradient-work" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stop-color="#fa709a" />
+                        <stop offset="100%" stop-color="#fee140" />
+                    </linearGradient>
+                    <linearGradient id="gradient-break" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stop-color="#4facfe" />
+                        <stop offset="100%" stop-color="#00f2fe" />
+                    </linearGradient>
+                </defs>
+                <g id="dotsGroup"></g>
+                
+                <!-- 자연스럽게 걷는 인간 형태의 애니메이션 캐릭터 구조 -->
+                <g id="stickmanPos">
+                    <g id="stickmanChar" class="paused">
+                        <g id="stickmanBody" class="stickman-part">
+                            <!-- 머리 -->
+                            <circle cx="0" cy="-15" r="4.5" fill="var(--text-color)" />
+                            <!-- 몸통 -->
+                            <line x1="0" y1="-10" x2="0" y2="4" stroke="var(--text-color)" stroke-width="3" stroke-linecap="round" />
+                            
+                            <!-- 오른(뒤) 팔 -->
+                            <g class="stickman-part bicep-r">
+                                <line x1="0" y1="0" x2="0" y2="9" stroke="var(--text-color)" stroke-width="3" stroke-linecap="round" />
+                                <g class="stickman-part forearm-r">
+                                    <line x1="0" y1="0" x2="0" y2="9" stroke="var(--text-color)" stroke-width="3" stroke-linecap="round" />
+                                </g>
+                            </g>
+
+                            <!-- 오른(뒤) 다리 -->
+                            <g class="stickman-part thigh-r">
+                                <line x1="0" y1="0" x2="0" y2="7" stroke="var(--text-color)" stroke-width="3" stroke-linecap="round" />
+                                <g class="stickman-part shin-r">
+                                    <line x1="0" y1="0" x2="0" y2="7" stroke="var(--text-color)" stroke-width="3" stroke-linecap="round" />
+                                </g>
+                            </g>
+
+                            <!-- 왼(앞) 팔 -->
+                            <g class="stickman-part bicep-l">
+                                <line x1="0" y1="0" x2="0" y2="9" stroke="var(--text-color)" stroke-width="3" stroke-linecap="round" />
+                                <g class="stickman-part forearm-l">
+                                    <line x1="0" y1="0" x2="0" y2="9" stroke="var(--text-color)" stroke-width="3" stroke-linecap="round" />
+                                </g>
+                            </g>
+
+                            <!-- 왼(앞) 다리 -->
+                            <g class="stickman-part thigh-l">
+                                <line x1="0" y1="0" x2="0" y2="7" stroke="var(--text-color)" stroke-width="3" stroke-linecap="round" />
+                                <g class="stickman-part shin-l">
+                                    <line x1="0" y1="0" x2="0" y2="7" stroke="var(--text-color)" stroke-width="3" stroke-linecap="round" />
+                                </g>
+                            </g>
+                        </g>
+                    </g>
+                </g>
+            </svg>
+            <div class="timer" id="timeDisplay">25:00</div>
+        </div>
+        
+        <div class="controls">
+            <button id="startBtn">시작</button>
+            <button id="pauseBtn">일시정지</button>
+            <button id="resetBtn">초기화</button>
+        </div>
+    </div>
+
+    <script>
+        const WORK_TIME = 25 * 60;
+        const BREAK_TIME = 5 * 60;
+        
+        let timeLeft = WORK_TIME;
+        let timerId = null;
+        let isRunning = false;
+        let isWorkMode = true;
+        let isFinished = false;
+
+        // 애니메이션 위트 모드 변수
+        let currentPhase = 'idle';
+        let currentVariant = 'normal';
+
+        const timeDisplay = document.getElementById('timeDisplay');
+        const modeLabel = document.getElementById('modeLabel');
+        const startBtn = document.getElementById('startBtn');
+        const pauseBtn = document.getElementById('pauseBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const timerArea = document.getElementById('timerArea');
+        const dotsGroup = document.getElementById('dotsGroup');
+        let dots = [];
+
+        timerArea.addEventListener('dblclick', () => {
+            if (timeLeft > 5 && !isFinished) {
+                timeLeft = 5;
+                const pos = document.getElementById('stickmanPos');
+                pos.style.transition = 'transform 0.2s ease-in-out'; 
+                updateDisplay();
+                setTimeout(() => { pos.style.transition = 'transform 1s linear'; }, 300);
+            }
+        });
+
+        function playAlarm() {
+            try {
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+
+                const notes = [523.25, 587.33, 659.25, 783.99]; 
+                notes.forEach((freq, i) => {
+                    const osc = audioCtx.createOscillator();
+                    const gainNode = audioCtx.createGain();
+                    
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(freq, audioCtx.currentTime + i * 0.15);
+                    gainNode.gain.setValueAtTime(0, audioCtx.currentTime + i * 0.15);
+                    gainNode.gain.linearRampToValueAtTime(0.3, audioCtx.currentTime + i * 0.15 + 0.05);
+                    gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + i * 0.15 + 0.15);
+                    
+                    osc.connect(gainNode);
+                    gainNode.connect(audioCtx.destination);
+                    osc.start(audioCtx.currentTime + i * 0.15);
+                    osc.stop(audioCtx.currentTime + i * 0.15 + 0.2);
+                });
+                
+                const osc = audioCtx.createOscillator();
+                const gainNode = audioCtx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(1046.50, audioCtx.currentTime + 0.6);
+                gainNode.gain.setValueAtTime(0, audioCtx.currentTime + 0.6);
+                gainNode.gain.linearRampToValueAtTime(0.3, audioCtx.currentTime + 0.6 + 0.05);
+                gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.6 + 0.5);
+                
+                osc.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+                osc.start(audioCtx.currentTime + 0.6);
+                osc.stop(audioCtx.currentTime + 0.6 + 0.6);
+            } catch(e) {}
+        }
+
+        function initDots(totalMinutes) {
+            dotsGroup.innerHTML = ''; 
+            dots = [];
+            
+            const ringRadius = 165; 
+            const center = 190;
+            
+            for (let i = 0; i < totalMinutes; i++) {
+                const angleRad = (i / totalMinutes) * 2 * Math.PI - (Math.PI / 2);
+                const cx = center + ringRadius * Math.cos(angleRad);
+                const cy = center + ringRadius * Math.sin(angleRad);
+                
+                const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                circle.setAttribute('cx', cx);
+                circle.setAttribute('cy', cy);
+                circle.setAttribute('r', '8');
+                circle.setAttribute('stroke', isWorkMode ? 'url(#gradient-work)' : 'url(#gradient-break)');
+                circle.setAttribute('stroke-width', '4');
+                circle.setAttribute('fill', 'transparent'); 
+                circle.style.transition = 'fill 0.6s cubic-bezier(0.25, 0.8, 0.25, 1), opacity 0.6s ease';
+                
+                dotsGroup.appendChild(circle);
+                dots.push(circle);
+            }
+        }
+
+        function updateDotsFill() {
+            const totalMinutes = Math.floor((isWorkMode ? WORK_TIME : BREAK_TIME) / 60);
+            const passedMinutes = totalMinutes - Math.ceil(timeLeft / 60);
+            
+            dots.forEach((dot, index) => {
+                if (index < passedMinutes) {
+                    dot.setAttribute('fill', isWorkMode ? 'url(#gradient-work)' : 'url(#gradient-break)');
+                    dot.classList.remove('pulsing');
+                    dot.style.opacity = '1';
+                } else if (index === passedMinutes) {
+                    dot.setAttribute('fill', 'transparent');
+                    dot.style.opacity = '1'; 
+                    if (isRunning && !isFinished) {
+                        dot.classList.add('pulsing');
+                    } else {
+                        dot.classList.remove('pulsing');
+                    }
+                } else {
+                    dot.setAttribute('fill', 'transparent');
+                    dot.classList.remove('pulsing');
+                    dot.style.opacity = '0.35';
+                }
+            });
+        }
+
+        function updateStickmanPos() {
+    const totalTime = isWorkMode ? WORK_TIME : BREAK_TIME;
+    const totalSecondsPassed = totalTime - timeLeft;
+
+    // Use total rotations to avoid backwards spinning caused by resetting 360 to 0
+    const totalRotations = totalSecondsPassed / 60;
+
+    // compute orbit around the entire big circle
+    const ringRadius = 165;
+    const center = 190;
+    
+    // Start from top (-90 degrees) and rotate clockwise smoothly and continuously
+    const currentOrbitAngleDeg = -90 + totalRotations * 360;
+    const currentOrbitAngleRad = currentOrbitAngleDeg * Math.PI / 180;
+    
+    const cx = center + ringRadius * Math.cos(currentOrbitAngleRad);
+    const cy = center + ringRadius * Math.sin(currentOrbitAngleRad);
+    const rotation = currentOrbitAngleDeg + 90;
+
+    const pos = document.getElementById('stickmanPos');
+    // keep linear transition for smooth uniform motion
+    pos.style.transition = 'transform 1s linear';
+    pos.style.transform = `translate(${cx}px, ${cy}px) rotate(${rotation}deg)`;
+
+    const charGrp = document.getElementById('stickmanChar');
+    const secondsWithinMinute = totalSecondsPassed % 60;
+    let fullClass = 'walking default-legs default-arms';
+
+    // Jump once when completing an orbit
+    if (secondsWithinMinute === 0 && totalSecondsPassed > 0) {
+        fullClass = 'jumping';
+    }
+
+    if (isFinished) {
+        charGrp.setAttribute('class', 'jumping');
+    } else if (!isRunning) {
+        charGrp.setAttribute('class', fullClass + ' paused');
+    } else {
+        charGrp.setAttribute('class', fullClass);
+    }
+}
+
+        function updateDisplay() {
+            const minutes = Math.floor(timeLeft / 60);
+            const seconds = timeLeft % 60;
+            const displayString = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            timeDisplay.textContent = displayString;
+            document.title = `${displayString} - ${isWorkMode ? '집중' : '휴식'}`;
+            
+            updateDotsFill();
+            updateStickmanPos();
+        }
+
+        function switchMode() {
+            isWorkMode = !isWorkMode;
+            timeLeft = isWorkMode ? WORK_TIME : BREAK_TIME;
+            
+            if (isWorkMode) {
+                modeLabel.textContent = '집중 시간';
+                document.body.style.background = 'var(--bg-color-work)';
+            } else {
+                modeLabel.textContent = '휴식 시간';
+                document.body.style.background = 'var(--bg-color-break)';
+            }
+            
+            initDots(Math.floor((isWorkMode ? WORK_TIME : BREAK_TIME) / 60));
+            isFinished = false;
+            
+            const pos = document.getElementById('stickmanPos');
+            pos.style.transition = 'none';
+            updateDisplay();
+            setTimeout(() => { pos.style.transition = 'transform 1s linear'; }, 50);
+        }
+
+        function startTimer() {
+            if (isRunning && !isFinished) return;
+            isRunning = true;
+            
+            try {
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+            } catch(e) {}
+            
+            updateDisplay();
+            
+            timerId = setInterval(() => {
+                if (!isFinished) {
+                    timeLeft--;
+                }
+                updateDisplay();
+
+                if (timeLeft <= 0 && !isFinished) {
+                    isFinished = true;
+                    playAlarm();
+                    updateDisplay(); 
+                    
+                    setTimeout(() => {
+                        if (isFinished) {
+                            isRunning = false;
+                            clearInterval(timerId);
+                            switchMode();
+                        }
+                    }, 4000);
+                }
+            }, 1000);
+        }
+
+        function pauseTimer() {
+            if (!isRunning && !isFinished) return;
+            isRunning = false;
+            clearInterval(timerId);
+            updateDisplay();
+        }
+
+        function resetTimer() {
+            pauseTimer();
+            isFinished = false;
+            isWorkMode = true;
+            timeLeft = WORK_TIME;
+            modeLabel.textContent = '집중 시간';
+            document.body.style.background = 'var(--bg-color-work)';
+            
+            initDots(Math.floor(WORK_TIME / 60));
+            
+            const pos = document.getElementById('stickmanPos');
+            pos.style.transition = 'none';
+            updateDisplay();
+            setTimeout(() => { pos.style.transition = 'transform 1s linear'; }, 50);
+        }
+
+        startBtn.addEventListener('click', startTimer);
+        pauseBtn.addEventListener('click', pauseTimer);
+        resetBtn.addEventListener('click', resetTimer);
+
+        initDots(Math.floor(WORK_TIME / 60));
+        updateDisplay();
+    </script>
+</body>
+</html>
